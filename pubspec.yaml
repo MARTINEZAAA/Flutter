@@ -36,6 +36,8 @@ dependencies:
   cupertino_icons: ^1.0.8
   dio: ^5.11.1
   audioplayers: ^6.8.1
+  flutter_tts: ^4.2.5
+  shared_preferences: ^2.5.6
 
 dev_dependencies:
   flutter_test:
@@ -59,7 +61,15 @@ flutter:
   # the material Icons class.
   uses-material-design: true
   assets:
-    - assets/audio/retro_dex_theme.wav
+    - assets/audio/rojo_fuego_loop.wav
+    - assets/images/liz.png
+    - assets/images/liz_brow_left.png
+    - assets/images/liz_brow_right.png
+    - assets/images/pokemon_logo.png
+  fonts:
+    - family: PressStart2P
+      fonts:
+        - asset: assets/fonts/PressStart2P-Regular.ttf
 
   # To add assets to your application, add an assets section, like this:
   # assets:
