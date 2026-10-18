@@ -764,6 +764,7 @@ class _PokemonMotion extends StatefulWidget {
     required this.pokemon,
     required this.child,
     this.spriteUrl,
+    this.shiny = false,
   });
 
   final Pokemon pokemon;
@@ -771,6 +772,9 @@ class _PokemonMotion extends StatefulWidget {
 
   /// Dirección del sprite, para analizar su figura.
   final String? spriteUrl;
+
+  /// Es la versión variocolor: brilla con destellos al aparecer.
+  final bool shiny;
 
   @override
   State<_PokemonMotion> createState() => _PokemonMotionState();
@@ -961,7 +965,13 @@ class _PokemonMotionState extends State<_PokemonMotion>
           ),
           IgnorePointer(
             child: CustomPaint(
-              painter: _FxPainter(profile, time, rig, back: false),
+              painter: _FxPainter(
+                profile,
+                time,
+                rig,
+                back: false,
+                shiny: widget.shiny,
+              ),
             ),
           ),
           if (pose.move case final move?)
@@ -1045,14 +1055,22 @@ const _questionBits = [' XXX ', 'X   X', '   X ', '  X  ', '     ', '  X  '];
 /// Partículas y luces en pixel art. Todo sale del tiempo y de la semilla
 /// del Pokémon, así que no guardan estado.
 class _FxPainter extends CustomPainter {
-  _FxPainter(this.profile, this.time, this.rig, {required this.back})
-    : pose = rig.pose;
+  _FxPainter(
+    this.profile,
+    this.time,
+    this.rig, {
+    required this.back,
+    this.shiny = false,
+  }) : pose = rig.pose;
 
   final _Profile profile;
   final double time;
   final _Rig rig;
   final _Pose pose;
   final bool back;
+
+  /// Destellos de Pokémon variocolor.
+  final bool shiny;
 
   late Canvas _canvas;
   late Size _size;
@@ -1145,6 +1163,7 @@ class _FxPainter extends CustomPainter {
       _actionFront();
       _attack();
       _entrance();
+      if (shiny) _shinySparkle();
     }
   }
 
@@ -1866,6 +1885,43 @@ class _FxPainter extends CustomPainter {
         }
       default:
         break;
+    }
+  }
+
+  /// Brillo de los variocolor, como en los juegos: al aparecer, estrellas
+  /// que giran a su alrededor y se abren; después, algún destello suelto
+  /// sobre su cuerpo cada pocos segundos.
+  void _shinySparkle() {
+    const gold = Color(0xFFFFE04A);
+    if (time > 0.25 && time < 1.7) {
+      final life = (time - 0.25) / 1.45;
+      for (var i = 0; i < 10; i++) {
+        final delay = (i % 2) * 0.18;
+        final t = ((life - delay) / (1 - delay)).clamp(0.0, 1.0);
+        if (t <= 0 || t >= 1) continue;
+        final angle = i * math.pi / 5 + t * math.pi * 1.4;
+        final radius = _side * (0.12 + 0.4 * Curves.easeOut.transform(t));
+        _star(
+          _center + Offset(math.cos(angle), math.sin(angle) * 0.8) * radius,
+          i.isEven ? gold : Colors.white,
+          math.sin(t * math.pi) * 1.3,
+        );
+      }
+    }
+    final cycle = (time / 3.5).floor();
+    final local = time % 3.5;
+    if (time > 2 && local < 0.6) {
+      for (var i = 0; i < 3; i++) {
+        final t = ((local - i * 0.12) / 0.35).clamp(0.0, 1.0);
+        if (t <= 0 || t >= 1) continue;
+        final p =
+            _center +
+            Offset(
+              (_rand(i, 50 + cycle) - 0.5) * _side * 0.45,
+              (_rand(i, 60 + cycle) - 0.5) * _side * 0.45,
+            );
+        _star(p, i.isEven ? Colors.white : gold, math.sin(t * math.pi));
+      }
     }
   }
 

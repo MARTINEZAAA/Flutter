@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:new_activity/main.dart';
@@ -147,6 +148,26 @@ void main() {
     await tester.pumpAndSettle();
     expect(cries, [2, 1]);
     expect(find.text('POKEMON SEMILLA'), findsOneWidget);
+  });
+
+  testWidgets('Las flechas del teclado cambian de Pokémon', (tester) async {
+    final cries = <int>[];
+    await _pumpDex(tester, cries: cries, spoken: []);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+    expect(cries, [2]);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.pumpAndSettle();
+    expect(cries, [2, 1]);
+
+    // Mientras se escribe en el buscador, las flechas mueven el cursor.
+    await tester.tap(find.byType(TextField).first);
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+    expect(cries, [2, 1]);
   });
 
   testWidgets('Los botones silencian el grito y la voz', (tester) async {

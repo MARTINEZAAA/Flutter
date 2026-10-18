@@ -88,7 +88,7 @@ List<_LizStep> _lizLessons(String? name) => [
 // -------------------------------------------------------------- Voz
 
 /// Voz de la Pokédex, al estilo de la del anime: la voz de hombre latina del
-/// sistema, grave, pausada y pareja, precedida de un bip electrónico. Nunca
+/// sistema, grave, ágil y pareja, precedida de un bip electrónico. Nunca
 /// usa a Pablo (España). Liz no usa voz: habla con sonidos de 8 bits.
 class DexVoice {
   FlutterTts? _tts;
@@ -113,10 +113,10 @@ class DexVoice {
     // En web las voces cargan tarde, así que seguimos buscando hasta
     // encontrar una y fijamos el idioma cada vez.
     final voice = _voice ??= _best(await _allVoices(tts));
-    // Como la Pokédex del anime: grave, sin prisa y con poca entonación,
-    // para que suene a máquina. Una voz de mujer se baja todavía más.
+    // Como la Pokédex del anime: grave, ágil y con poca entonación, para
+    // que suene a máquina. Una voz de mujer se baja todavía más.
     final male = voice == null || _isMale(voice);
-    await tts.setSpeechRate(kIsWeb ? 0.88 : 0.42);
+    await tts.setSpeechRate(kIsWeb ? 1.25 : 0.62);
     await tts.setPitch(male ? 0.72 : 0.6);
     if (voice != null) {
       await tts.setLanguage(voice['locale']!);

@@ -6,6 +6,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -138,6 +139,9 @@ class _PokemonPageState extends State<PokemonPage> {
   bool _musicLoading = false;
   bool _soundsEnabled = true;
   bool _voiceEnabled = true;
+
+  /// Muestra los Pokémon en su versión variocolor (shiny).
+  bool _shiny = false;
   bool _speaking = false;
   // El navegador bloquea el audio hasta que el usuario interactúa; si el
   // arranque automático falla, la música empieza con el primer toque.
@@ -436,6 +440,25 @@ class _PokemonPageState extends State<PokemonPage> {
     if (id < 1) return;
     setState(() => _selectedId = id);
     unawaited(_showPokemon(_loadPokemon(id)));
+  }
+
+  /// Las flechas izquierda y derecha del teclado hacen lo mismo que la
+  /// cruceta (y mantenerlas pulsadas pasa Pokémon seguidos). No cuentan
+  /// mientras se escribe (ahí mueven el cursor) ni mientras habla Liz.
+  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    final delta = switch (event.logicalKey) {
+      LogicalKeyboardKey.arrowLeft => -1,
+      LogicalKeyboardKey.arrowRight => 1,
+      _ => null,
+    };
+    if (delta == null || _lizSteps != null) return KeyEventResult.ignored;
+    final typing = FocusManager.instance.primaryFocus?.context
+        ?.findAncestorStateOfType<EditableTextState>();
+    if (typing != null) return KeyEventResult.ignored;
+    if (event is KeyDownEvent || event is KeyRepeatEvent) _step(delta);
+    // También se queda con el resto de la pulsación, para que Flutter no
+    // use la flecha para saltar a otro control.
+    return KeyEventResult.handled;
   }
 
   void _step(int delta) {
@@ -747,58 +770,64 @@ class _PokemonPageState extends State<PokemonPage> {
   @override
   Widget build(BuildContext context) {
     final lizSteps = _lizSteps;
-    return Scaffold(
-      body: Listener(
-        behavior: HitTestBehavior.translucent,
-        onPointerDown: (_) => _wakeMusic(),
-        child: Stack(
-          children: [
-            // El paisaje de la presentación, detrás de la Pokédex.
-            const Positioned.fill(child: _DexScenery()),
-            Positioned.fill(child: _buildDex()),
-            if (lizSteps != null)
-              Positioned.fill(
-                child: _LizOverlay(
-                  // Una clave nueva por apertura reinicia el recorrido.
-                  key: ObjectKey(lizSteps),
-                  steps: lizSteps,
-                  onLetter: _lizLetter,
-                  onClose: _closeLiz,
-                  onName: widget.onTrainerNamed == null
-                      ? null
-                      : _registerTrainer,
-                  initialName: widget.trainerName,
-                  // Quien ya está registrado puede dejar su nombre como está.
-                  nameOptional: widget.trainerName != null,
-                  actions: _lizMenu
-                      ? [
-                          _BlackPill(
-                            label: 'GUIA',
-                            tooltip: 'Recorrido por la Pokédex',
-                            onPressed: () => _openLiz(_tourSteps()),
-                          ),
-                          _BlackPill(
-                            label: 'POKEMON?',
-                            tooltip: 'Qué son los Pokémon',
-                            onPressed: () =>
-                                _openLiz(_lizLessons(widget.trainerName)),
-                          ),
-                          if (widget.onTrainerNamed != null)
+    // La Pokédex recibe el teclado: las flechas que no usa un campo de
+    // texto llegan aquí.
+    return FocusScope(
+      autofocus: true,
+      onKeyEvent: _onKey,
+      child: Scaffold(
+        body: Listener(
+          behavior: HitTestBehavior.translucent,
+          onPointerDown: (_) => _wakeMusic(),
+          child: Stack(
+            children: [
+              // El paisaje de la presentación, detrás de la Pokédex.
+              const Positioned.fill(child: _DexScenery()),
+              Positioned.fill(child: _buildDex()),
+              if (lizSteps != null)
+                Positioned.fill(
+                  child: _LizOverlay(
+                    // Una clave nueva por apertura reinicia el recorrido.
+                    key: ObjectKey(lizSteps),
+                    steps: lizSteps,
+                    onLetter: _lizLetter,
+                    onClose: _closeLiz,
+                    onName: widget.onTrainerNamed == null
+                        ? null
+                        : _registerTrainer,
+                    initialName: widget.trainerName,
+                    // Quien ya está registrado puede dejar su nombre como está.
+                    nameOptional: widget.trainerName != null,
+                    actions: _lizMenu
+                        ? [
                             _BlackPill(
-                              label: 'MI NOMBRE',
-                              tooltip: 'Cambiar nombre de entrenador',
-                              onPressed: () => _openLiz([_namePrompt()]),
+                              label: 'GUIA',
+                              tooltip: 'Recorrido por la Pokédex',
+                              onPressed: () => _openLiz(_tourSteps()),
                             ),
-                          _BlackPill(
-                            label: 'CERRAR',
-                            tooltip: 'Cerrar a Liz',
-                            onPressed: _closeLiz,
-                          ),
-                        ]
-                      : null,
+                            _BlackPill(
+                              label: 'POKEMON?',
+                              tooltip: 'Qué son los Pokémon',
+                              onPressed: () =>
+                                  _openLiz(_lizLessons(widget.trainerName)),
+                            ),
+                            if (widget.onTrainerNamed != null)
+                              _BlackPill(
+                                label: 'MI NOMBRE',
+                                tooltip: 'Cambiar nombre de entrenador',
+                                onPressed: () => _openLiz([_namePrompt()]),
+                              ),
+                            _BlackPill(
+                              label: 'CERRAR',
+                              tooltip: 'Cerrar a Liz',
+                              onPressed: _closeLiz,
+                            ),
+                          ]
+                        : null,
+                  ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -859,6 +888,8 @@ class _PokemonPageState extends State<PokemonPage> {
         error: _detailError,
         screenHeight: expand ? null : 220,
         onCry: _cryAgain,
+        shiny: _shiny,
+        onShiny: () => setState(() => _shiny = !_shiny),
       ),
     );
     return _Shell(
@@ -1383,6 +1414,8 @@ class _MainScreen extends StatelessWidget {
     required this.error,
     required this.screenHeight,
     required this.onCry,
+    this.shiny = false,
+    this.onShiny,
   });
 
   final Pokemon? pokemon;
@@ -1392,6 +1425,10 @@ class _MainScreen extends StatelessWidget {
   /// Alto fijo de la pantalla; si es null ocupa todo el espacio disponible.
   final double? screenHeight;
   final VoidCallback onCry;
+
+  /// Muestra la versión variocolor (shiny) de los Pokémon.
+  final bool shiny;
+  final VoidCallback? onShiny;
 
   @override
   Widget build(BuildContext context) {
@@ -1435,6 +1472,30 @@ class _MainScreen extends StatelessWidget {
                     ),
                   ),
                 ),
+                const SizedBox(width: 10),
+                // Botón shiny: estrella dorada cuando está activo.
+                Tooltip(
+                  message: shiny
+                      ? 'Ver colores normales'
+                      : 'Ver versión variocolor (shiny)',
+                  child: _Pressable(
+                    onPressed: pokemon == null ? null : onShiny,
+                    child: Container(
+                      width: 26,
+                      height: 26,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: shiny ? _lightYellow : const Color(0xFF7A7A7A),
+                        border: Border.all(color: _outline, width: 2.5),
+                      ),
+                      child: Icon(
+                        Icons.auto_awesome,
+                        size: 14,
+                        color: shiny ? _outline : Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
                 const Spacer(),
                 const _Speaker(),
               ],
@@ -1464,16 +1525,32 @@ class _MainScreen extends StatelessWidget {
         child: Text('CARGANDO...', style: _pixel(10, color: _outline)),
       );
     }
-    final sprite = pokemon.spriteUrl ?? pokemon.imageUrl;
+    final normal = pokemon.spriteUrl ?? pokemon.imageUrl;
+    final showShiny = shiny && pokemon.shinySpriteUrl != null;
+    final sprite = showShiny ? pokemon.shinySpriteUrl : normal;
     return Stack(
       children: [
         Positioned.fill(child: CustomPaint(painter: _ScanlinePainter())),
         Positioned(
           left: 10,
           top: 8,
-          child: Text(
-            'Nº${pokemon.id.toString().padLeft(3, '0')}',
-            style: _pixel(10, color: _outline),
+          child: Row(
+            children: [
+              Text(
+                'Nº${pokemon.id.toString().padLeft(3, '0')}',
+                style: _pixel(10, color: _outline),
+              ),
+              if (showShiny) ...[
+                const SizedBox(width: 6),
+                const Icon(
+                  Icons.auto_awesome,
+                  size: 12,
+                  color: Color(0xFFE0A800),
+                ),
+                const SizedBox(width: 2),
+                Text('SHINY', style: _pixel(7, color: const Color(0xFFB07F00))),
+              ],
+            ],
           ),
         ),
         Positioned(
@@ -1509,6 +1586,7 @@ class _MainScreen extends StatelessWidget {
                     child: _PokemonMotion(
                       pokemon: pokemon,
                       spriteUrl: sprite,
+                      shiny: showShiny,
                       child: Image.network(
                         sprite,
                         fit: BoxFit.contain,
@@ -2535,21 +2613,19 @@ class PokemonService {
         ? Future<Map<String, dynamic>?>.value()
         : _orNull(_getJson(speciesUrl));
 
-    final abilityEntries = (data['abilities'] as List<dynamic>? ?? const [])
-        .cast<Map<String, dynamic>>();
-    final abilityFutures = abilityEntries.map((entry) async {
-      final name = _dig(entry, ['ability', 'name']) as String? ?? '';
-      final url = _dig(entry, ['ability', 'url']) as String?;
-      final ability = url == null ? null : await _orNull(_getJson(url));
-      return _localizedName(ability?['names'] as List<dynamic>?) ??
-          _capitalize(name.replaceAll('-', ' '));
-    });
+    final abilitiesFuture = _abilityNames(data);
+    // Una mega se compara con su forma original para describirla.
+    final isMega = pokemon.name.contains('-mega');
+    final baseFuture = isMega && pokemon.speciesId != null
+        ? _orNull(_fetchBase(pokemon.speciesId!))
+        : Future<Pokemon?>.value();
 
     final species = await speciesFuture;
     final evolutionsFuture = _orNull(_fetchEvolutions(species));
-    final abilities = await Future.wait(abilityFutures);
+    final abilities = await abilitiesFuture;
     final evolutions = await evolutionsFuture;
-    return pokemon.copyWith(
+    final base = await baseFuture;
+    final full = pokemon.copyWith(
       abilities: abilities,
       evolutions: evolutions?.stages,
       megaForms: evolutions?.megas,
@@ -2558,6 +2634,30 @@ class PokemonService {
         species?['flavor_text_entries'] as List<dynamic>?,
       ),
     );
+    if (base == null) return full;
+    return full.copyWith(description: _megaDescription(full, base));
+  }
+
+  /// Nombres en español de las habilidades del Pokémon.
+  Future<List<String>> _abilityNames(Map<String, dynamic> data) {
+    final entries = (data['abilities'] as List<dynamic>? ?? const [])
+        .cast<Map<String, dynamic>>();
+    return Future.wait(
+      entries.map((entry) async {
+        final name = _dig(entry, ['ability', 'name']) as String? ?? '';
+        final url = _dig(entry, ['ability', 'url']) as String?;
+        final ability = url == null ? null : await _orNull(_getJson(url));
+        return _localizedName(ability?['names'] as List<dynamic>?) ??
+            _capitalize(name.replaceAll('-', ' '));
+      }),
+    );
+  }
+
+  /// La forma original de una especie (con sus habilidades en español).
+  Future<Pokemon> _fetchBase(int speciesId) async {
+    final data = await _getJson('$_baseUrl/$speciesId/');
+    return Pokemon.fromJson(data)
+        .copyWith(abilities: await _abilityNames(data));
   }
 
   /// Recorre la cadena evolutiva de la especie y busca las megaevoluciones
@@ -2773,6 +2873,117 @@ class PokemonSummary {
   }
 }
 
+/// Megapiedras cuyo nombre en español no sigue la regla general.
+const _megaStones = {
+  'lucario': 'Lucarionita',
+  'sableye': 'Sablenita',
+  'altaria': 'Altarianita',
+  'slowbro': 'Slowbronita',
+  'sharpedo': 'Sharpedonita',
+  'glalie': 'Glalita',
+  'mewtwo': 'Mewtwoita',
+  'diancie': 'Diancita',
+};
+
+/// "venusaur" -> "Venusaurita", "blastoise" -> "Blastoisita".
+String _megaStone(String species) {
+  if (_megaStones[species] case final stone?) return stone;
+  final drop = RegExp(r'[eoy]$').hasMatch(species);
+  final root = drop ? species.substring(0, species.length - 1) : species;
+  return '${_capitalize(root)}ita';
+}
+
+/// "2.4 m" con coma decimal y sin ",0".
+String _decimal(num value) {
+  final text = value.toStringAsFixed(1).replaceAll('.', ',');
+  return text.endsWith(',0') ? text.substring(0, text.length - 2) : text;
+}
+
+/// Descripción de una megaevolución comparada con su forma original: cómo
+/// megaevoluciona y qué cambia (tipo, habilidad, estadísticas y tamaño).
+String _megaDescription(Pokemon mega, Pokemon base) {
+  const statNames = {
+    'hp': 'PS',
+    'attack': 'Ataque',
+    'defense': 'Defensa',
+    'special-attack': 'Ataque Especial',
+    'special-defense': 'Defensa Especial',
+    'speed': 'Velocidad',
+  };
+  final baseName = base.displayName;
+  final parts = mega.name.split('-');
+  final variant = parts.last == 'mega' ? '' : ' ${parts.last.toUpperCase()}';
+  final text = StringBuffer(
+    '${mega.displayName} es la megaevolución de $baseName. ',
+  );
+
+  // Cómo megaevoluciona.
+  if (base.name == 'rayquaza') {
+    text.write(
+      'Es el único que no necesita megapiedra: megaevoluciona en combate '
+      'cuando conoce el movimiento Ascenso Draco. ',
+    );
+  } else {
+    text.write(
+      'Megaevoluciona en pleno combate cuando lleva la '
+      '${_megaStone(base.name)}$variant y su entrenador activa la Piedra '
+      'Llave; la transformación dura hasta que termina el combate. ',
+    );
+  }
+
+  // Tipo.
+  String types(Pokemon p) => _joinSpanish(p.types.map(_typeName));
+  if (mega.types.join() == base.types.join()) {
+    text.write('Conserva su tipo ${types(base)}. ');
+  } else {
+    text.write('Su tipo cambia de ${types(base)} a ${types(mega)}. ');
+  }
+
+  // Habilidad.
+  final ability = mega.abilities.firstOrNull;
+  if (ability != null) {
+    text.write(
+      base.abilities.contains(ability)
+          ? 'Mantiene la habilidad $ability. '
+          : 'Obtiene la habilidad $ability. ',
+    );
+  }
+
+  // Estadísticas.
+  final before = {for (final s in base.stats) s.name: s.value};
+  final gains = <String>[];
+  final losses = <String>[];
+  var total = 0;
+  for (final stat in mega.stats) {
+    final diff = stat.value - (before[stat.name] ?? stat.value);
+    total += diff;
+    final name = statNames[stat.name] ?? stat.name;
+    if (diff > 0) gains.add('+$diff de $name');
+    if (diff < 0) losses.add('${-diff} de $name');
+  }
+  if (gains.isNotEmpty) {
+    text.write(
+      'Sus estadísticas suben $total puntos en total: '
+      '${_joinSpanish(gains)}',
+    );
+    text.write(
+      losses.isEmpty ? '. ' : ', aunque pierde ${_joinSpanish(losses)}. ',
+    );
+  }
+
+  // Tamaño.
+  String size(int now, int was, String unit) => now == was
+      ? '${_decimal(now / 10)} $unit, como antes'
+      : '${_decimal(now / 10)} $unit (antes ${_decimal(was / 10)} $unit)';
+  if (mega.height != base.height || mega.weight != base.weight) {
+    text.write(
+      'Mide ${size(mega.height, base.height, 'm')} y pesa '
+      '${size(mega.weight, base.weight, 'kg')}.',
+    );
+  }
+  return text.toString().trim();
+}
+
 /// Un Pokémon dentro de la cadena evolutiva o una de sus megaevoluciones.
 class EvolutionEntry {
   const EvolutionEntry({required this.id, required this.name, this.condition});
@@ -2815,6 +3026,7 @@ class Pokemon {
     required this.types,
     required this.stats,
     this.spriteUrl,
+    this.shinySpriteUrl,
     this.cryUrls = const [],
     this.abilities = const [],
     this.genus,
@@ -2834,6 +3046,9 @@ class Pokemon {
 
   /// Sprite pixelado, preferiblemente el de Rojo Fuego / Verde Hoja.
   final String? spriteUrl;
+
+  /// El mismo sprite en su versión variocolor (shiny).
+  final String? shinySpriteUrl;
   final List<String> types;
   final List<PokemonStat> stats;
 
@@ -2887,6 +3102,7 @@ class Pokemon {
       weight: weight,
       imageUrl: imageUrl,
       spriteUrl: spriteUrl,
+      shinySpriteUrl: shinySpriteUrl,
       types: types,
       stats: stats,
       cryUrls: cryUrls,
@@ -2922,6 +3138,15 @@ class Pokemon {
           ]) ??
           sprite(['versions', 'generation-iii', 'emerald', 'front_default']) ??
           sprite(['front_default']),
+      shinySpriteUrl:
+          sprite([
+            'versions',
+            'generation-iii',
+            'firered-leafgreen',
+            'front_shiny',
+          ]) ??
+          sprite(['versions', 'generation-iii', 'emerald', 'front_shiny']) ??
+          sprite(['front_shiny']),
       types: rawTypes
           .map((entry) => _dig(entry, ['type', 'name']) as String)
           .toList(),
